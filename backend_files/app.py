@@ -1,87 +1,86 @@
 
-# Import Flask functions for creating the REST API
 from flask import Flask, request, jsonify
-
-# Import joblib to load the trained machine learning model
 import joblib
-
-# Import pandas to process incoming tabular data
 import pandas as pd
 
-# Create the Flask application
 app = Flask(__name__)
 
-# Load the saved SuperKart model
+# Load the trained SuperKart model
 model = joblib.load("model.pkl")
 
 
-# ---------------------------------------------------------
-# Online Prediction Endpoint
-# ---------------------------------------------------------
-
-# Define the endpoint for predicting sales for one record
 @app.route("/v1/superkart", methods=["POST"])
 def predict():
-
-    # Get the JSON data sent by the client
+    # Get JSON input from the request
     data = request.get_json()
 
-    # Convert the JSON record into a pandas DataFrame
+    # Convert the input into a DataFrame
     input_data = pd.DataFrame([data])
 
     # Generate the sales prediction
     prediction = model.predict(input_data)
 
-    # Return the prediction as a JSON response
+    # Return the prediction as JSON
     return jsonify({
         "predicted_sales": float(prediction[0])
     })
 
 
-# ---------------------------------------------------------
-# Batch Prediction Endpoint
-# ---------------------------------------------------------
-
-# Define the endpoint for batch predictions using a CSV file
 @app.route("/v1/superkartbatch", methods=["POST"])
 def predict_batch():
-
-    # Check whether a file was included in the request
+    # Check whether a CSV file was uploaded
     if "file" not in request.files:
-        return jsonify({
-            "error": "No CSV file uploaded"
-        }), 400
+        return jsonify({"error": "No CSV file uploaded"}), 400
 
     # Read the uploaded CSV file
     file = request.files["file"]
-    input_data = pd.read_csv(file)
+    batch_data = pd.read_csv(file)
 
-    # Generate predictions for all records
-    predictions = model.predict(input_data)
+    # Create a copy so that the original uploaded data is preserved
+    batch_df = batch_data.copy()
 
-    # Add predictions to the input DataFrame
-    input_data["Predicted_Product_Store_Sales_Total"] = predictions
+    # Create Store_Age using the Store_Age_Years column
+    batch_df["Store_Age"] = batch_df["Store_Age_Years"]
 
-    # Return the batch predictions as JSON
-    return jsonify(
-        input_data.to_dict(orient="records")
-    )
+    # Rename Product_Type_Category to Product_Type
+    # so that it matches the feature used during model training
+    batch_df["Product_Type"] = batch_df["Product_Type_Category"]
+
+    # The raw batch CSV does not contain Store_Id.
+    # Use OUT004 as the Store_Id for these batch records,
+    # matching the batch prediction preparation used in the notebook.
+    batch_df["Store_Id"] = "OUT004"
+
+    # Select the features required by the trained model
+    batch_features = batch_df[
+        [
+            "Product_Weight",
+            "Product_Sugar_Content",
+            "Product_Allocated_Area",
+            "Product_MRP",
+            "Store_Size",
+            "Store_Location_City_Type",
+            "Store_Type",
+            "Store_Age",
+            "Product_Type",
+            "Store_Id"
+        ]
+    ]
+
+    # Generate sales predictions for all uploaded records
+    predictions = model.predict(batch_features)
+
+    # Add predictions to the original batch data
+    batch_data["Predicted_Product_Store_Sales_Total"] = predictions
+
+    # Return the batch data with predictions as JSON
+    return jsonify(batch_data.to_dict(orient="records"))
 
 
-# ---------------------------------------------------------
-# Start Flask Application
-# ---------------------------------------------------------
-
-# Start the Flask application when this file is executed
 if __name__ == "__main__":
-
-    # Listen on all available network interfaces
+    # Run Flask on all network interfaces
     app.run(
         host="0.0.0.0",
-
-        # Use port 7860 as required for the deployment
         port=7860,
-
-        # Disable debug mode for deployment
         debug=False
     )

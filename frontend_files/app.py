@@ -40,8 +40,8 @@ st.write(
 # ---------------------------------------------------------
 
 # Define the backend URL inside the Docker network
-BACKEND_URL = "http://backend:7860"
-
+# Use the Codespace host because the frontend runs with host networking
+BACKEND_URL = "http://127.0.0.1:7860"
 
 # ---------------------------------------------------------
 # Online Prediction
